@@ -17,6 +17,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -36,6 +37,9 @@ public class BookManageServiceImpl extends ServiceImpl<BookInfoMapper, BookInfo>
     private BookTagMapper tagMapper;
 
     @Autowired
+    private BookStatsMapper bookStatsMapper;
+
+    @Autowired
     private BookImageMapper bookImageMapper;
 
     @Override
@@ -44,19 +48,23 @@ public class BookManageServiceImpl extends ServiceImpl<BookInfoMapper, BookInfo>
         // 1. 拷贝基础属性并保存书籍
         BookInfo book = new BookInfo();
         BeanUtils.copyProperties(dto, book);
-
-        // 🌟 提取封面图：默认取传过来的第一张图片
         if (dto.getImageUrls() != null && !dto.getImageUrls().isEmpty()) {
             book.setCoverImageUrl(dto.getImageUrls().get(0));
         }
-
         book.setStatus(0); // 默认下架状态
-        book.setSales(0);
         this.save(book); // MyBatis-Plus 会自动将生成的 ID 回填到 book 对象中
 
+        // 2. 初始化书籍统计记录
+        BookStats stats = new BookStats();
+        stats.setBookId(book.getId());
+        stats.setSales(0);
+        stats.setAvgRating(BigDecimal.ZERO);
+        stats.setReviewCount(0);
+        stats.setFavoriteCount(0);
+        stats.setCompositeScore(BigDecimal.ZERO);   // 推荐综合分初始值
+        bookStatsMapper.insert(stats);
         // 2. 处理多级分类与标签体系 (Middle) - 绑定标签
         saveTagRelations(book.getId(), dto.getTagIds());
-        // 🌟 处理多图画廊
         saveImages(book.getId(), dto.getImageUrls());
     }
 
@@ -66,12 +74,9 @@ public class BookManageServiceImpl extends ServiceImpl<BookInfoMapper, BookInfo>
         if (dto.getId() == null) {
             throw new IllegalArgumentException("修改书籍时ID不能为空");
         }
-
         // 1. 拷贝属性执行更新 (MyBatis-Plus 的 updateById 会自动携带 @Version 乐观锁字段进行校验)
         BookInfo book = new BookInfo();
         BeanUtils.copyProperties(dto, book);
-
-        // 🌟 提取封面图：默认取传过来的第一张图片
         if (dto.getImageUrls() != null && !dto.getImageUrls().isEmpty()) {
             book.setCoverImageUrl(dto.getImageUrls().get(0));
         } else {
@@ -90,8 +95,6 @@ public class BookManageServiceImpl extends ServiceImpl<BookInfoMapper, BookInfo>
         bookTagRelationMapper.delete(deleteWrapper);
 
         saveTagRelations(book.getId(), dto.getTagIds());
-
-        // 🌟 处理图片 (先删后增)
         LambdaQueryWrapper<BookImage> deleteImgWrapper = new LambdaQueryWrapper<>();
         deleteImgWrapper.eq(BookImage::getBookId, book.getId());
         bookImageMapper.delete(deleteImgWrapper);
@@ -167,28 +170,9 @@ public class BookManageServiceImpl extends ServiceImpl<BookInfoMapper, BookInfo>
             Page<BookDetailVO> page = new Page<>(current, size);
 
             // 🌟 1. 用 List 接收返回值，完美避开 ClassCastException 强转报错
-            List<BookDetailVO> records = this.baseMapper.searchBooksDynamic(page, categoryId, queryDTO.getKeyword());
-
-            // 🌟 2. 循环挂载标签
-            // 在 getAdminBookPage 的循环挂载中补充：
-            if (records != null && !records.isEmpty() && tagMapper != null) {
-                for (BookDetailVO vo : records) {
-                    if (vo != null && vo.getId() != null) {
-                        vo.setTags(tagMapper.getTagsByBookId(vo.getId()));
-                        // 查出该书的所有图片，组装进 VO，供前端回显
-                        List<String> images = bookImageMapper.selectObjs(new LambdaQueryWrapper<BookImage>()
-                                        .select(BookImage::getImageUrl)
-                                        .eq(BookImage::getBookId, vo.getId())
-                                        .orderByAsc(BookImage::getSortOrder))
-                                .stream().map(Object::toString).collect(Collectors.toList());
-                        vo.setImages(images);
-                    }
-                }
-            }
-
-            // 🌟 3. 手动把 List 塞进 Page 对象中并返回（此时 page 对象里已经有 total 总数了）
-            page.setRecords(records);
-            return page;
+            IPage<BookDetailVO> resultPage =this.baseMapper.searchBooksDynamic(
+                    page, categoryId, queryDTO.getKeyword());
+            return resultPage;
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -269,7 +253,6 @@ public class BookManageServiceImpl extends ServiceImpl<BookInfoMapper, BookInfo>
 
         tagMapper.deleteById(id);
     }
-    //**********
 
     /**
      * 🌟 新增的辅助方法：保存图片列表

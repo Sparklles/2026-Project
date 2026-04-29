@@ -1,15 +1,19 @@
 package com.example.productmanagement.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.example.productmanagement.entity.BookImage;
-import com.example.productmanagement.entity.BookInfo;
-import com.example.productmanagement.entity.BookReview;
-import com.example.productmanagement.entity.SysUser;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.example.productmanagement.dto.BookQueryDTO;
+import com.example.productmanagement.entity.*;
+import com.example.productmanagement.enums.BookSortField;
+import com.example.productmanagement.enums.SortOrder;
 import com.example.productmanagement.mapper.*;
 import com.example.productmanagement.service.FrontBookService;
 import com.example.productmanagement.vo.ProductDetailVO;
 import com.example.productmanagement.vo.ReviewVO;
+import com.example.productmanagement.vo.SearchBookVO;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.text.SimpleDateFormat;
@@ -20,13 +24,58 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
-public class FrontBookServiceImpl implements FrontBookService {
+public class FrontBookServiceImpl extends ServiceImpl<BookInfoMapper, BookInfo> implements FrontBookService {
 
-    private final BookInfoMapper bookInfoMapper;
-    private final BookTagMapper bookTagMapper;
-    private final BookReviewMapper bookReviewMapper;
-    private final SysUserMapper sysUserMapper; // 用于查评价的用户名
-    private final BookImageMapper bookImageMapper;
+    @Autowired
+    private BookCategoryMapper bookCategoryMapper;
+    @Autowired
+    private BookTagMapper bookTagMapper;
+    @Autowired
+    private BookReviewMapper bookReviewMapper;
+    @Autowired
+    private SysUserMapper sysUserMapper;
+    @Autowired
+    private BookImageMapper bookImageMapper;
+    @Autowired
+    private BookInfoMapper bookInfoMapper;
+
+    @Override
+    public IPage<SearchBookVO> searchBooks(IPage<SearchBookVO> page, String keyword) {
+        return baseMapper.searchBooks(page, null, keyword);
+    }
+
+    @Override
+    public IPage<SearchBookVO> queryBooks(IPage<SearchBookVO> page, BookQueryDTO queryDto) {
+        // 排序字段白名单校验
+        if (queryDto.getSortField() != null) {
+            BookSortField sortField = BookSortField.fromField(queryDto.getSortField());
+            if (sortField == null) {
+                // 无效字段，重置为空，走默认排序
+                queryDto.setSortField(null);
+            } else {
+                // 如果有必要，可将枚举的列名重新赋值回去（因为前端可能传的就是列名，所以一致）
+                queryDto.setSortField(sortField.getColumn());
+            }
+        }
+        // 排序方向校验（使用 SortOrder 枚举）
+        if (queryDto.getSortOrder() != null) {
+            SortOrder sortOrder = SortOrder.fromValue(queryDto.getSortOrder());
+            queryDto.setSortOrder(sortOrder != null ? sortOrder.getValue() : SortOrder.DESC.getValue());
+        } else {
+            // 未传则默认降序
+            queryDto.setSortOrder(SortOrder.DESC.getValue());
+        }
+        return baseMapper.selectBookPageWithFilters(page, queryDto);
+    }
+
+    @Override
+    public List<BookCategory> getAllCategories() {
+        // 按 sort_order 升序返回所有分类，若不存在则按 id 排序
+        LambdaQueryWrapper<BookCategory> wrapper = new LambdaQueryWrapper<>();
+        wrapper.orderByAsc(BookCategory::getSortOrder);
+        return bookCategoryMapper.selectList(wrapper);
+    }
+
 
     @Override
     public ProductDetailVO getProductDetail(Long productId) {

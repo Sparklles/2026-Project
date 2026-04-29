@@ -19,10 +19,12 @@ public class BookDetailVO {
 
     private String author;
 
-    // 🌟 就是因为缺了它，导致了刚才的崩溃！
     private String isbn;
 
-    private BigDecimal price; // 如果您原来用的是 Double，改成 Double 也可以
+    private BigDecimal price;
+
+    @JsonFormat(pattern = "yyyy-MM-dd", timezone = "GMT+8")
+    private Date publishDate;
 
     private String description;
 
@@ -30,21 +32,29 @@ public class BookDetailVO {
 
     private Integer stock;
 
+    private Integer sales;
+
     private Integer status;
 
     private Long categoryId;
 
+    private Integer difficultyTag;
+
+    private String region;
+
     private String categoryName;
 
+    private BigDecimal avgRating;
+
+    private Integer reviewCount;
+
+    private Integer favoriteCount;
+
+    private BigDecimal compositeScore;
     // 用于接收我们 Java 代码里塞进去的标签列表
     private List<String> tags;
-    /** 新增：返回给前端的回显图片列表 */
+
     private List<String> images;
 
-    // 🌟 新增：为了前端编辑时能够回显，必须加上这两个字段
     private Integer pages;
-
-    // 🌟 保证传给前端的时间格式是 yyyy-MM-dd
-    @JsonFormat(pattern = "yyyy-MM-dd", timezone = "GMT+8")
-    private Date publishDate;
 }
