@@ -8,6 +8,14 @@ import java.util.Date;
 @Data
 @TableName("book_info")
 public class BookInfo {
+    /**
+     * 年龄分段/适用水平：0-ALL, 1-BEGINNER, 2-INTERMEDIATE, 3-ADVANCED
+     */
+    public static final Integer ALL = 0;
+    public static final Integer BEGINNER = 1;
+    public static final Integer INTERMEDIATE = 2;
+    public static final Integer ADVANCED = 3;
+
     @TableId(type = IdType.AUTO)
     private Long id;
     private Long categoryId;
@@ -20,7 +28,12 @@ public class BookInfo {
     private String description;
     private String coverImageUrl;
     private Integer stock;
-    private Integer sales;
+
+    //年龄分段/适用水平：0-ALL, 1-BEGINNER, 2-INTERMEDIATE, 3-ADVANCED
+    private Integer difficultyTag;
+    //航行地区(如: 太平洋, 加勒比海, 地中海)
+    private String region;
+
     /** 上架状态: 1-已上架, 0-已下架 */
     private Integer status;
 
