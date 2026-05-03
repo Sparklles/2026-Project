@@ -13,8 +13,9 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(RuntimeException.class)
     public Result<?> handleRuntimeException(RuntimeException e) {
         log.warn("业务异常拦截: {}", e.getMessage());
+        log.error("业务异常拦截，详情如下: ", e);
         String msg = e.getMessage() != null ? e.getMessage() : "系统内部数据异常(空指针)";
-        return Result.error(400, e.getMessage());
+        return Result.error(400, msg);
     }
 
     // 兜底捕获不可预知的系统异常
