@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.productmanagement.mapper.BookInfoMapper">
+
+    <resultMap id="BookDetailMap" type="com.example.productmanagement.vo.BookDetailVO">
+        <id property="id" column="id"/>
+        <result property="title" column="title"/>
+        <result property="author" column="author"/>
+        <result property="isbn" column="isbn"/>
+        <result property="price" column="price"/>
+        <result property="publishDate" column="publish_date"/>
+        <result property="description" column="description"/>
+        <result property="coverImageUrl" column="cover_image_url"/>
+        <result property="stock" column="stock"/>
+        <result property="sales" column="sales"/>
+        <result property="status" column="status"/>
+        <result property="categoryId" column="category_id"/>
+        <result property="categoryName" column="category_name"/>
+        <result property="difficultyTag" column="difficulty_tag"/>
+        <result property="region" column="region"/>
+        <result property="avgRating" column="avg_rating"/>
+        <result property="reviewCount" column="review_count"/>
+        <result property="favoriteCount" column="favorite_count"/>
+        <result property="compositeScore" column="composite_score"/>
+        <result property="tags" column="tag_names_str"
+                typeHandler="com.example.productmanagement.handler.StringToListTypeHandler"/>
+        <result property="images" column="image_urls_str"
+                typeHandler="com.example.productmanagement.handler.StringToListTypeHandler"/>
+    </resultMap>
+
+    <resultMap id="SearchBookMap" type="com.example.productmanagement.vo.SearchBookVO">
+        <id property="id" column="id"/>
+        <result property="title" column="title"/>
+        <result property="author" column="author"/>
+        <result property="price" column="price"/>
+        <result property="coverImageUrl" column="cover_image_url"/>
+        <result property="sales" column="sales"/>
+        <result property="avgRating" column="avg_rating"/>
+        <result property="reviewCount" column="review_count"/>
+        <result property="favoriteCount" column="favorite_count"/>
+        <result property="difficultyTag" column="difficulty_tag"/>
+        <result property="tags" column="tag_names_str"
+                typeHandler="com.example.productmanagement.handler.StringToListTypeHandler"/>
+    </resultMap>
+
+    <select id="searchBooksDynamic" resultMap="BookDetailMap">
+        SELECT
+        b.id, b.title, b.author, b.isbn, b.price, b.publish_date,
+        b.description, b.cover_image_url, b.stock, b.status,
+        b.category_id, b.difficulty_tag, b.region,
+        c.name AS category_name,
+        bs.sales, bs.avg_rating, bs.review_count, bs.favorite_count,bs.composite_score,
+        (SELECT GROUP_CONCAT(t.name SEPARATOR ',')
+        FROM book_tag_relation r
+        INNER JOIN book_tag t ON r.tag_id = t.id
+        WHERE r.book_id = b.id
+        ) AS tag_names_str,
+        (SELECT GROUP_CONCAT(img.image_url ORDER BY img.sort_order ASC SEPARATOR ',')
+        FROM book_image img
+        WHERE img.book_id = b.id
+        ) AS image_urls_str
+        FROM book_info b
+        LEFT JOIN book_category c ON b.category_id = c.id
+        LEFT JOIN book_stats bs ON b.id = bs.book_id
+        <where>
+            b.is_deleted = 0
+            <if test="categoryId != null">
+                AND b.category_id = #{categoryId}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (b.title LIKE CONCAT('%', #{keyword}, '%')
+                OR b.author LIKE CONCAT('%', #{keyword}, '%')
+                OR b.description LIKE CONCAT('%', #{keyword}, '%')
+                OR b.region LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+        </where>
+        ORDER BY b.id DESC
+    </select>
+
+    <select id="selectTagsByBookId" resultType="java.lang.String">
+        SELECT t.name
+        FROM book_tag t
+                 INNER JOIN book_tag_relation r ON t.id = r.tag_id
+        WHERE r.book_id = #{id}
+    </select>
+
+    <select id="getBookDetailWithTags" resultMap="BookDetailMap">
+        SELECT
+            b.id, b.title, b.author, b.isbn, b.price, b.publish_date,
+            b.description, b.cover_image_url, b.stock, b.status,
+            b.category_id, b.difficulty_tag, b.region,
+            c.name AS category_name,
+            bs.sales, bs.avg_rating, bs.review_count, bs.favorite_count
+        FROM book_info b
+                 LEFT JOIN book_category c ON b.category_id = c.id
+                 LEFT JOIN book_stats bs ON b.id = bs.book_id
+        WHERE b.id = #{bookId} AND b.is_deleted = 0
+    </select>
+
+    <!-- 模糊搜索：字段精简为 SearchBookVO 所需列 -->
+    <select id="searchBooks" resultMap="SearchBookMap">
+        SELECT
+        b.id, b.title, b.author, b.price, b.cover_image_url,
+        b.difficulty_tag,
+        bs.sales, bs.avg_rating, bs.review_count, bs.favorite_count,
+        (SELECT GROUP_CONCAT(t.name SEPARATOR ',')
+        FROM book_tag_relation r
+        INNER JOIN book_tag t ON r.tag_id = t.id
+        WHERE r.book_id = b.id
+        ) AS tag_names_str
+        FROM book_info b
+        LEFT JOIN book_stats bs ON b.id = bs.book_id
+        <where>
+            b.is_deleted = 0
+            <if test="categoryId != null">
+                AND b.category_id = #{categoryId}
+            </if>
+            <if test="keyword != null and keyword != ''">
+                AND (b.title LIKE CONCAT('%', #{keyword}, '%')
+                OR b.author LIKE CONCAT('%', #{keyword}, '%')
+                OR b.description LIKE CONCAT('%', #{keyword}, '%')
+                OR b.region LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+        </where>
+        ORDER BY b.id DESC
+    </select>
+
+    <!-- 前台高级筛选分页查询（一次性聚合标签） -->
+    <select id="selectBookPageWithFilters" resultMap="SearchBookMap">
+        SELECT
+        b.id, b.title, b.author, b.price, b.cover_image_url,
+        b.difficulty_tag,
+        bs.sales, bs.avg_rating, bs.review_count, bs.favorite_count,
+        (
+        SELECT GROUP_CONCAT(t.name SEPARATOR ',')
+        FROM book_tag_relation r
+        INNER JOIN book_tag t ON r.tag_id = t.id
+        WHERE r.book_id = b.id
+        ) AS tag_names_str
+        FROM book_info b
+        LEFT JOIN book_stats bs ON b.id = bs.book_id
+        <where>
+            b.status = 1 AND b.is_deleted = 0
+            <if test="query.categoryId != null">
+                AND b.category_id = #{query.categoryId}
+            </if>
+            <if test="query.title != null and query.title != ''">
+                AND b.title LIKE CONCAT('%', #{query.title}, '%')
+            </if>
+            <if test="query.author != null and query.author != ''">
+                AND b.author LIKE CONCAT('%', #{query.author}, '%')
+            </if>
+            <if test="query.minYear != null">
+                AND YEAR(b.publish_date) >= #{query.minYear}
+            </if>
+            <if test="query.maxYear != null">
+                AND YEAR(b.publish_date) &lt;= #{query.maxYear}
+            </if>
+            <if test="query.difficultyTag != null">
+                AND b.difficulty_tag = #{query.difficultyTag}
+            </if>
+            <if test="query.region != null and query.region != ''">
+                AND b.region LIKE CONCAT('%', #{query.region}, '%')
+            </if>
+            <if test="query.minPrice != null">
+                AND b.price >= #{query.minPrice}
+            </if>
+            <if test="query.maxPrice != null">
+                AND b.price &lt;= #{query.maxPrice}
+            </if>
+        </where>
+        <choose>
+            <when test="query.sortField != null and query.sortField != ''">
+                <choose>
+                    <when test="query.sortField == 'sales'">
+                        ORDER BY bs.sales ${query.sortOrder}
+                    </when>
+                    <when test="query.sortField == 'favorite_count'">
+                        ORDER BY bs.favorite_count ${query.sortOrder}
+                    </when>
+                    <when test="query.sortField == 'avg_rating'">
+                        ORDER BY bs.avg_rating ${query.sortOrder}
+                    </when>
+                    <when test="query.sortField == 'price'">
+                        ORDER BY b.price ${query.sortOrder}
+                    </when>
+                    <when test="query.sortField == 'publish_date'">
+                        ORDER BY b.publish_date ${query.sortOrder}
+                    </when>
+                </choose>
+            </when>
+            <otherwise>
+                ORDER BY b.id DESC
+            </otherwise>
+        </choose>
+    </select>
+</mapper>

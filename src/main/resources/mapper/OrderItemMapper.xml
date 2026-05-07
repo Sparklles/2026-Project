@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.productmanagement.mapper.OrderItemMapper">
+
+    <select id="countPurchasedRecord" resultType="java.lang.Integer">
+        SELECT COUNT(1)
+        FROM order_item oi
+                 INNER JOIN book_order bo ON oi.order_id = bo.id
+        WHERE oi.user_id = #{userId}
+          AND oi.book_id = #{bookId}
+          AND bo.status >= 1 </select>
+
+    <insert id="insertBatch">
+        INSERT INTO order_item (order_id, book_id, book_name, cover_url,
+        price, quantity, total_price)
+        VALUES
+        <foreach collection="list" item="item" separator=",">
+            (#{item.orderId}, #{item.bookId}, #{item.bookName}, #{item.coverUrl}, #{item.price}, #{item.quantity}, #{item.totalPrice})
+        </foreach>
+    </insert>
+
+    <select id="selectByOrderId" resultType="com.example.productmanagement.entity.OrderItem">
+        SELECT * FROM order_item i
+        WHERE i.order_id = #{orderId}
+    </select>
+
+</mapper>
