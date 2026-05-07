@@ -59,7 +59,7 @@
         FROM `user` u
                  LEFT JOIN user_detail ud ON u.id = ud.user_id
         <where>
-            u.is_deleted = 0
+            u.is_deleted = 0 AND u.role = 1
             <if test="params.loginAccount != null and params.loginAccount != ''">
                 AND u.login_account LIKE CONCAT('%', #{params.loginAccount}, '%')
             </if>

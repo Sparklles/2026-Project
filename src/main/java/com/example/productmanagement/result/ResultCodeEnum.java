@@ -27,6 +27,10 @@ public enum ResultCodeEnum {
     EMAIL_LENGTH_ERROR(311, "邮箱长度不能大于100"),
     //邮箱已被使用
     EMAIL_EXIST_ERROR(312, "邮箱已被使用"),
+    EMAIL_NOT_BIND_ERROR(313, "该账号未绑定邮箱"),
+    VERIFY_CODE_ERROR(314, "验证码错误"),
+    VERIFY_CODE_EXPIRED(315, "验证码已过期"),
+    VERIFY_CODE_SEND_TOO_FREQUENT(316, "验证码发送过于频繁，请稍后再试"),
 
 
     LOGIN_ACCOUNT_EMPTY(501, "手机号或账号为空"),

@@ -19,7 +19,7 @@ public class UpdateUserAccountDto {
     private String email;
 
     /**
-     * 账号状态：1-正常，0-冻结
+     * 账号状态字段已迁移至专用状态变更接口，不建议在此接口中传值。
      */
     private Integer status;
 }

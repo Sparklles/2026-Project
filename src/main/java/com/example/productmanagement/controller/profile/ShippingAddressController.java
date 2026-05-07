@@ -2,10 +2,14 @@ package com.example.productmanagement.controller.profile;
 
 
 import com.example.productmanagement.dto.ShippingAddressDto;
+import com.example.productmanagement.entity.ShippingAddress;
+import com.example.productmanagement.mapper.ShippingAddressMapper;
 import com.example.productmanagement.result.Result;
 import com.example.productmanagement.service.ShippingAddressService;
+import com.example.productmanagement.utils.UserHolder;
 import com.example.productmanagement.vo.ShippingAddressVo;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -29,6 +33,8 @@ import java.util.List;
 public class ShippingAddressController {
 
     private final ShippingAddressService shippingAddressService;
+    @Autowired
+    private ShippingAddressMapper shippingAddressMapper;
 
     /**
      * 查询当前登录用户的全部收货地址。
@@ -85,5 +91,16 @@ public class ShippingAddressController {
     public Result<Void> setDefaultAddress(@PathVariable Long id) {
         shippingAddressService.setDefaultAddress(id);
         return Result.ok();
+    }
+
+    /**
+     * 获取当前用户的收货地址列表
+     */
+    @GetMapping("/list2")
+    public com.example.productmanagement.controller.Result<List<ShippingAddress>> listAddresses(@RequestParam Long userId) {
+        Long userId1 = UserHolder.getUserId();
+        userId=userId1;
+        List<ShippingAddress> list = shippingAddressMapper.getAddressListByUserId(userId);
+        return com.example.productmanagement.controller.Result.success(list);
     }
 }

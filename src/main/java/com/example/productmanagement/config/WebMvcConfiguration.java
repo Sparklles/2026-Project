@@ -26,7 +26,12 @@ public class WebMvcConfiguration implements WebMvcConfigurer {
                 .excludePathPatterns(
                         "/api/register/**",   // 注册接口
                         "/api/login/**",
-                        "/api/auth/public-key"
+                        "/api/password/forgot/**",
+                        "/api/auth/public-key",
+                        "/images/**",
+                        "/favicon.ico",   // 🌟 核心修复：放行浏览器自动请求的图标
+                        "/*.html",        // 放行可能存在的静态网页
+                        "/error"
                 )
                 .order(1);
 
