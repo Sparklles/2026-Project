@@ -8,6 +8,7 @@ import com.example.productmanagement.dto.PageQueryDTO;
 import com.example.productmanagement.entity.BookCategory;
 import com.example.productmanagement.entity.BookTag;
 import com.example.productmanagement.service.BookManageService;
+import com.example.productmanagement.service.impl.ProductVectorSyncService;
 import com.example.productmanagement.vo.BookDetailVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -23,6 +24,8 @@ public class BookAdminController {
 
     @Autowired
     private BookManageService bookManageService;
+    @Autowired
+    private ProductVectorSyncService productVectorSyncService;
 
     /**
      * (2) 商品信息维护: 录入新书并绑定标签
@@ -155,6 +158,25 @@ public class BookAdminController {
     public Result<?> deleteTag(@PathVariable("id") Long id) {
         bookManageService.deleteTag(id);
         return Result.success("删除标签成功");
+    }
+
+    /**
+     * 🌟 新增：手动强制重构 AI 向量知识库
+     * 给前端管理员面板的按钮使用
+     */
+    @GetMapping("/sync-ai")
+    public Result<?> forceSyncAiKnowledgeBase() {
+        // 因为大模型调用耗时较长，放入新线程异步执行，立刻给前端返回成功响应
+        new Thread(() -> {
+            try {
+                productVectorSyncService.syncAllToVectorStore();
+            } catch (Exception e) {
+                // 此处可接邮件告警等机制
+                e.printStackTrace();
+            }
+        }).start();
+
+        return Result.success("AI 知识库重构指令已下发，大模型正在后台默默学习中，请稍后测试。");
     }
 
 

@@ -32,8 +32,11 @@ public class FrontBookServiceImpl extends ServiceImpl<BookInfoMapper, BookInfo> 
     private BookTagMapper bookTagMapper;
     @Autowired
     private BookReviewMapper bookReviewMapper;
+
+    // 🌟 1. 核心修复：替换为真正的 UserMapper
     @Autowired
-    private SysUserMapper sysUserMapper;
+    private UserMapper userMapper;
+
     @Autowired
     private BookImageMapper bookImageMapper;
     @Autowired
@@ -46,23 +49,18 @@ public class FrontBookServiceImpl extends ServiceImpl<BookInfoMapper, BookInfo> 
 
     @Override
     public IPage<SearchBookVO> queryBooks(IPage<SearchBookVO> page, BookQueryDTO queryDto) {
-        // 排序字段白名单校验
         if (queryDto.getSortField() != null) {
             BookSortField sortField = BookSortField.fromField(queryDto.getSortField());
             if (sortField == null) {
-                // 无效字段，重置为空，走默认排序
                 queryDto.setSortField(null);
             } else {
-                // 如果有必要，可将枚举的列名重新赋值回去（因为前端可能传的就是列名，所以一致）
                 queryDto.setSortField(sortField.getColumn());
             }
         }
-        // 排序方向校验（使用 SortOrder 枚举）
         if (queryDto.getSortOrder() != null) {
             SortOrder sortOrder = SortOrder.fromValue(queryDto.getSortOrder());
             queryDto.setSortOrder(sortOrder != null ? sortOrder.getValue() : SortOrder.DESC.getValue());
         } else {
-            // 未传则默认降序
             queryDto.setSortOrder(SortOrder.DESC.getValue());
         }
         return baseMapper.selectBookPageWithFilters(page, queryDto);
@@ -70,18 +68,15 @@ public class FrontBookServiceImpl extends ServiceImpl<BookInfoMapper, BookInfo> 
 
     @Override
     public List<BookCategory> getAllCategories() {
-        // 按 sort_order 升序返回所有分类，若不存在则按 id 排序
         LambdaQueryWrapper<BookCategory> wrapper = new LambdaQueryWrapper<>();
         wrapper.orderByAsc(BookCategory::getSortOrder);
         return bookCategoryMapper.selectList(wrapper);
     }
 
-
     @Override
     public ProductDetailVO getProductDetail(Long productId) {
         // 1. 查询商品基础信息
         BookInfo bookInfo = bookInfoMapper.selectById(productId);
-        // 如果查不到或者已被逻辑删除(is_deleted=1)或者已下架(status=0)，抛出异常
         if (bookInfo == null || bookInfo.getStatus() == 0) {
             throw new RuntimeException("商品不存在或已下架");
         }
@@ -93,33 +88,29 @@ public class FrontBookServiceImpl extends ServiceImpl<BookInfoMapper, BookInfo> 
         detailVO.setMinPrice(bookInfo.getPrice());
         detailVO.setStock(bookInfo.getStock());
 
-        // 2. 适配前端画廊 (前端需要 List<String> images)
-        // 因为我们表里只有 cover_image_url，所以把它放进 list
-        // 2. 查询商品图集 (从新建的 book_image 表中查询所有图片)
+        // 2. 查询商品图集
         List<String> images = bookImageMapper.selectObjs(new LambdaQueryWrapper<BookImage>()
                         .select(BookImage::getImageUrl)
                         .eq(BookImage::getBookId, productId)
-                        .orderByAsc(BookImage::getSortOrder)) // 按照我们之前存的 sort_order 排序
+                        .orderByAsc(BookImage::getSortOrder))
                 .stream()
                 .map(Object::toString)
                 .collect(Collectors.toList());
 
-        // 容错处理：如果在 book_image 表里没查到图，就退化去查封面图
         if (images.isEmpty()) {
             if (bookInfo.getCoverImageUrl() != null && !bookInfo.getCoverImageUrl().isEmpty()) {
                 images.add(bookInfo.getCoverImageUrl());
             } else {
-                // 如果连封面都没有，给个默认占位图
                 images.add("https://shadow.elemecdn.com/app/element/hamburger.9cf7b091-55e9-11e9-a976-7f4d0b07eef6.png");
             }
         }
         detailVO.setImages(images);
 
-        // 3. 查出这本书绑定的标签 (利用您之前写好的原生 SQL 方法)
+        // 3. 查出这本书绑定的标签
         List<String> tags = bookTagMapper.getTagsByBookId(productId);
         detailVO.setTags(tags);
 
-        // 4. 查询前台用户评价 (仅展示审核通过 status=1 的评价，按时间倒序，最多10条)
+        // 4. 查询前台用户评价
         List<BookReview> reviewList = bookReviewMapper.selectList(new LambdaQueryWrapper<BookReview>()
                 .eq(BookReview::getBookId, productId)
                 .eq(BookReview::getStatus, 1)
@@ -133,14 +124,15 @@ public class FrontBookServiceImpl extends ServiceImpl<BookInfoMapper, BookInfo> 
             vo.setContent(review.getContent());
             vo.setDate(formatDate(review.getCreateTime()));
 
-            // 查询用户名并脱敏
-            SysUser user = sysUserMapper.selectById(review.getUserId());
+            // 🌟 2. 核心修复：使用真正的 User 实体去查
+            User user = userMapper.selectById(review.getUserId());
             if (user != null) {
-                vo.setUsername(maskUsername(user.getUsername()));
-                // 如果数据库有头像就用，没有给个默认头像
+                // 🌟 3. 核心修复：你的 User 实体里没有 getUsername，使用的是 getLoginAccount()
+                vo.setUsername(maskUsername(user.getLoginAccount()));
                 vo.setAvatar("https://cube.elemecdn.com/3/7c/3ea6beec64369c2642b92c6726f1epng.png");
             } else {
                 vo.setUsername("匿名用户");
+                vo.setAvatar("https://cube.elemecdn.com/9/c2/f0ee8a3c7c9638a54940382568c9dpng.png");
             }
 
             return vo;
@@ -151,18 +143,12 @@ public class FrontBookServiceImpl extends ServiceImpl<BookInfoMapper, BookInfo> 
         return detailVO;
     }
 
-    /**
-     * 工具方法：用户名脱敏 (航海时代 -> 航**代)
-     */
     private String maskUsername(String username) {
         if (username == null || username.length() <= 1) return username;
         if (username.length() == 2) return username.charAt(0) + "*";
         return username.charAt(0) + "**" + username.charAt(username.length() - 1);
     }
 
-    /**
-     * 工具方法：日期格式化 (YYYY-MM-DD)
-     */
     private String formatDate(Date date) {
         if (date == null) return "";
         return new SimpleDateFormat("yyyy-MM-dd").format(date);

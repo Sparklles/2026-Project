@@ -3,9 +3,10 @@ package com.example.productmanagement.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.example.productmanagement.dto.ReviewDTO;
 import com.example.productmanagement.entity.BookReview;
-import com.example.productmanagement.entity.SysUser;
+// 🌟 1. 核心修复：引入你系统真正的 User 实体和 Mapper
+import com.example.productmanagement.entity.User;
 import com.example.productmanagement.mapper.BookReviewMapper;
-import com.example.productmanagement.mapper.SysUserMapper;
+import com.example.productmanagement.mapper.UserMapper;
 import com.example.productmanagement.service.FrontReviewService;
 import com.example.productmanagement.vo.ReviewVO;
 import lombok.RequiredArgsConstructor;
@@ -21,21 +22,19 @@ import java.util.stream.Collectors;
 public class FrontReviewServiceImpl implements FrontReviewService {
 
     private final BookReviewMapper bookReviewMapper;
-    private final SysUserMapper sysUserMapper;
+    // 🌟 2. 核心修复：注入你系统真正的 UserMapper，而不是 SysUserMapper
+    private final UserMapper userMapper;
 
     @Override
     public List<ReviewVO> getBookReviews(Long bookId, Integer rating) {
         LambdaQueryWrapper<BookReview> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(BookReview::getBookId, bookId)
-                .eq(BookReview::getStatus, 1); // 仅查询审核通过/正常显示的评价
+                .eq(BookReview::getStatus, 1);
 
-        // 🌟 如果前端传了星级（大于0），则加入星级过滤条件
         if (rating != null && rating > 0) {
             if (rating == 2) {
-                // 当传入 2 时，代表前端选择了“2星以下(差评)”，使用 le (Less than or Equal) 小于等于
                 wrapper.le(BookReview::getRating, 2);
             } else {
-                // 当传入 3、4、5 时，代表精确匹配某个星级，使用 eq (Equal) 等于
                 wrapper.eq(BookReview::getRating, rating);
             }
         }
@@ -50,14 +49,13 @@ public class FrontReviewServiceImpl implements FrontReviewService {
             vo.setRating(review.getRating());
             vo.setContent(review.getContent());
             vo.setDate(formatDate(review.getCreateTime()));
-
-            // 新增：映射官方回复内容
             vo.setAdminReply(review.getAdminReply());
 
-            // 查询并脱敏用户名
-            SysUser user = sysUserMapper.selectById(review.getUserId());
+            // 🌟 3. 核心修复：使用真正的 User 实体去查询
+            User user = userMapper.selectById(review.getUserId());
             if (user != null) {
-                vo.setUsername(maskUsername(user.getUsername()));
+                // 使用 getLoginAccount() 作为要脱敏的用户名（根据你之前订单代码的逻辑）
+                vo.setUsername(maskUsername(user.getLoginAccount()));
                 vo.setAvatar("https://cube.elemecdn.com/3/7c/3ea6beec64369c2642b92c6726f1epng.png");
             } else {
                 vo.setUsername("匿名水手");
@@ -74,7 +72,7 @@ public class FrontReviewServiceImpl implements FrontReviewService {
         review.setUserId(userId);
         review.setRating(dto.getRating());
         review.setContent(dto.getContent());
-        review.setStatus(1); // 默认直接显示，严谨的系统可设为 0 待管理员审核
+        review.setStatus(1);
         review.setCreateTime(new Date());
 
         bookReviewMapper.insert(review);

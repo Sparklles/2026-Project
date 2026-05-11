@@ -18,6 +18,22 @@ public class BookStats {
     private Integer favoriteCount;
     private BigDecimal compositeScore;
 
+    // ==========================================
+    // 🌟 新增：AI 智能评价总结相关字段
+    // ==========================================
+
+    /**
+     * AI 基于用户评价生成的智能总结
+     * (对应数据库字段 ai_summary，存储为 JSON 字符串)
+     */
+    private String aiSummary;
+
+    /**
+     * AI 分析出来的情感倾向分数 (0-100分)
+     * (对应数据库字段 ai_sentiment_score)
+     */
+    private Integer aiSentimentScore;
+
     @Version
     private Integer version;
 

@@ -42,6 +42,9 @@ public class BookManageServiceImpl extends ServiceImpl<BookInfoMapper, BookInfo>
     @Autowired
     private BookImageMapper bookImageMapper;
 
+    @Autowired
+    private ProductVectorSyncService productVectorSyncService;
+
     @Override
     @Transactional(rollbackFor = Exception.class)
     public void addBookWithTags(BookDTO dto) {
@@ -66,6 +69,20 @@ public class BookManageServiceImpl extends ServiceImpl<BookInfoMapper, BookInfo>
         // 2. 处理多级分类与标签体系 (Middle) - 绑定标签
         saveTagRelations(book.getId(), dto.getTagIds());
         saveImages(book.getId(), dto.getImageUrls());
+
+        // ==========================================
+        // 🌟 新增：商品保存成功后，异步触发 AI 增量学习
+        // 使用新线程，保证不会卡住管理员保存商品的响应速度
+        // ==========================================
+        new Thread(() -> {
+            try {
+                productVectorSyncService.syncSingleProduct(book);
+            } catch (Exception e) {
+                log.error("AI 增量学习商品失败: {}");
+                e.printStackTrace();
+            }
+        }).start();
+
     }
 
     @Override
@@ -99,6 +116,18 @@ public class BookManageServiceImpl extends ServiceImpl<BookInfoMapper, BookInfo>
         deleteImgWrapper.eq(BookImage::getBookId, book.getId());
         bookImageMapper.delete(deleteImgWrapper);
         saveImages(book.getId(), dto.getImageUrls());
+
+        // ==========================================
+        // 🌟 新增：商品更新成功后，让 AI 大脑重新学习新属性
+        // ==========================================
+        new Thread(() -> {
+            try {
+                productVectorSyncService.syncSingleProduct(book);
+            } catch (Exception e) {
+                log.error("AI 更新学习商品失败: {}");
+                e.printStackTrace();
+            }
+        }).start();
     }
 
     @Override
