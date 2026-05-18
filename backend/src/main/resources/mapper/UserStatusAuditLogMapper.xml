@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.productmanagement.mapper.UserStatusAuditLogMapper">
+
+    <resultMap id="UserStatusAuditLogVoMap" type="com.example.productmanagement.vo.UserStatusAuditLogVo">
+        <id property="id" column="id"/>
+        <result property="userId" column="user_id"/>
+        <result property="targetLoginAccount" column="target_login_account"/>
+        <result property="adminId" column="admin_id"/>
+        <result property="adminLoginAccount" column="admin_login_account"/>
+        <result property="action" column="action"/>
+        <result property="beforeStatus" column="before_status"/>
+        <result property="afterStatus" column="after_status"/>
+        <result property="reasonType" column="reason_type"/>
+        <result property="reasonDetail" column="reason_detail"/>
+        <result property="createTime" column="create_time"/>
+    </resultMap>
+
+    <select id="selectAuditLogPage" resultMap="UserStatusAuditLogVoMap">
+        SELECT
+        l.id,
+        l.user_id,
+        tu.login_account AS target_login_account,
+        l.admin_id,
+        au.login_account AS admin_login_account,
+        l.action,
+        l.before_status,
+        l.after_status,
+        l.reason_type,
+        l.reason_detail,
+        l.create_time
+        FROM user_status_audit_log l
+        LEFT JOIN `user` tu ON l.user_id = tu.id
+        LEFT JOIN `user` au ON l.admin_id = au.id
+        <where>
+            1 = 1
+            <if test="params.targetLoginAccount != null and params.targetLoginAccount != ''">
+                AND tu.login_account LIKE CONCAT('%', #{params.targetLoginAccount}, '%')
+            </if>
+            <if test="params.adminLoginAccount != null and params.adminLoginAccount != ''">
+                AND au.login_account LIKE CONCAT('%', #{params.adminLoginAccount}, '%')
+            </if>
+            <if test="params.action != null and params.action != ''">
+                AND l.action = #{params.action}
+            </if>
+            <if test="params.reasonType != null and params.reasonType != ''">
+                AND l.reason_type = #{params.reasonType}
+            </if>
+        </where>
+        ORDER BY l.create_time DESC, l.id DESC
+    </select>
+
+</mapper>
