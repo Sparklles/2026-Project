@@ -3,6 +3,7 @@ package com.example.productmanagement.service;
 import com.example.productmanagement.dto.UpdatePasswordDto;
 import com.example.productmanagement.dto.UpdateProfileDto;
 import com.example.productmanagement.dto.UpdateUserAccountDto;
+import com.example.productmanagement.dto.UpdateUserStatusDto;
 import com.example.productmanagement.vo.UserProfileVo;
 
 /**
@@ -42,6 +43,14 @@ public interface ProfileService {
      * @param dto    待更新的账号字段
      */
     void updateUserAccount(Long userId, UpdateUserAccountDto dto);
+
+    /**
+     * 管理端：冻结/解冻指定用户账号。
+     *
+     * @param userId 目标用户 ID
+     * @param dto    账号状态参数
+     */
+    void updateUserStatus(Long userId, UpdateUserStatusDto dto);
 
     void updateMyPassword(UpdatePasswordDto dto);
 

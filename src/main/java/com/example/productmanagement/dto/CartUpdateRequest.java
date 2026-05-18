@@ -20,7 +20,6 @@ public class CartUpdateRequest implements Serializable {
     /**
      * 用户ID
      */
-    @NotNull(message = "用户ID不能为空")
     private Long userId;
 
     /**

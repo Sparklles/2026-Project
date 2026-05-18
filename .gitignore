@@ -1,5 +1,11 @@
 HELP.md
 target/
+node_modules/
+.npm-cache/
+.rollback-backup-second/
+uploads/
+src/main/resources/META-INF/
+src/test/
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/

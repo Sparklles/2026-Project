@@ -3,6 +3,7 @@ package com.example.productmanagement.controller.front;
 import com.example.productmanagement.controller.Result; // 替换为你的Result类路径
 import com.example.productmanagement.dto.ReviewDTO;
 import com.example.productmanagement.service.FrontReviewService;
+import com.example.productmanagement.utils.UserHolder;
 import com.example.productmanagement.vo.ReviewVO;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -40,11 +41,13 @@ public class FrontReviewController {
             return Result.error(400, "评价内容不能为空");
         }
 
-        // 🌟 注意：这里暂时写死 userId 为 2
-        // 在接入了真实登录(JWT/Session)后，请从 Token/Session 中提取真实用户 ID！
-        Long currentUserId = 2L;
+        Long currentUserId = UserHolder.getUserId();
+        if (currentUserId == null) {
+            return Result.error(401, "\u8bf7\u5148\u767b\u5f55");
+        }
 
         frontReviewService.addReview(dto, currentUserId);
         return Result.success("评价发布成功！");
     }
 }
+

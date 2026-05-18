@@ -54,6 +54,9 @@ public class BookDetailVO {
     // 用于接收我们 Java 代码里塞进去的标签列表
     private List<String> tags;
 
+    // 用于编辑弹窗回显标签多选框
+    private List<Long> tagIds;
+
     private List<String> images;
 
     private Integer pages;

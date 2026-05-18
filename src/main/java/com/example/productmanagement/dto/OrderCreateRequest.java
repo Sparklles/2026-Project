@@ -19,8 +19,6 @@ public class OrderCreateRequest implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
-    @NotNull(message = "用户ID不能为空")
-    @Positive(message = "用户Id必须大于0")
     private Long userId;
 
     @NotNull(message = "地址ID不能为空")

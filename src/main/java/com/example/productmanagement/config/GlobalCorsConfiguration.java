@@ -2,6 +2,7 @@ package com.example.productmanagement.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import com.example.productmanagement.interceptor.AuthenticationInterceptor;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import org.springframework.web.filter.CorsFilter;
@@ -22,6 +23,10 @@ public class GlobalCorsConfiguration implements WebMvcConfigurer {
         corsConfiguration.addAllowedHeader("*");
         // 设置允许的请求方法(GET/DELETE/POST/UPDATE，*表示允许所有)
         corsConfiguration.addAllowedMethod("*");
+        // 允许前端读取自动续签后的 token 响应头
+        corsConfiguration.addExposedHeader(AuthenticationInterceptor.ACCESS_TOKEN_HEADER);
+        corsConfiguration.addExposedHeader(AuthenticationInterceptor.USER_TOKEN_HEADER);
+        corsConfiguration.addExposedHeader(AuthenticationInterceptor.ADMIN_TOKEN_HEADER);
         // 预检请求（OPTIONS）的缓存时间(秒)，避免平凡发送预检请求
         corsConfiguration.setMaxAge(3600L);
 

@@ -51,7 +51,8 @@ public class StatusEnum {
     public enum PayStatus {
         UNPAID(0, "未支付"),
         PAYING(1, "支付中"),
-        PAYED(2,"已支付");
+        PAYED(2,"已支付"),
+        PAID(2,"已支付");
 
 
         private final Integer code;
@@ -152,5 +153,81 @@ public class StatusEnum {
 
             return "未知状态";
         }
+    }
+
+    // ====================== 退款模块 ==========================
+    @Getter
+    @AllArgsConstructor
+    public enum RefundType {
+        RETURN_GOODS(0, "退货退款"),
+        REFUND_ONLY(1, "仅退款");
+
+        private final Integer code;
+        private final String desc;
+
+        public static Boolean validateStatus(Integer status) {
+            return status != null && status >= 0 && status < values().length;
+        }
+    }
+
+    @Getter
+    @AllArgsConstructor
+    public enum RefundStatus {
+        PENDING_REVIEW(0, "待审核"),
+        REVIEW_APPROVED(1, "审核通过"),
+        SHIPPED(2, "用户已寄回"),
+        RECEIVED(3, "商家已收货"),
+        REFUNDED(4, "已退款"),
+        REVIEW_REJECTED(5, "审核拒绝"),
+        CLOSED(6, "用户已取消");
+
+        private final Integer code;
+        private final String desc;
+
+        public static Boolean validateStatus(Integer status) {
+            return status != null && status >= 0 && status < values().length;
+        }
+    }
+
+    // ====================== 通知模块 ==========================
+    @Getter
+    @AllArgsConstructor
+    public enum NotificationType {
+        REMIND_SHIP(1, "提醒发货"),
+        ORDER_PROGRESS(2, "订单进度通知"),
+        REMIND_REFUND(3, "提醒退款处理");
+
+        private final Integer code;
+        private final String desc;
+    }
+
+    @Getter
+    @AllArgsConstructor
+    public enum ReceiverType {
+        USER(1, "用户"),
+        SELLER(2, "卖家");
+
+        private final Integer code;
+        private final String desc;
+    }
+
+    @Getter
+    @AllArgsConstructor
+    public enum NotificationStatus {
+        UNREAD(0, "未读"),
+        READ(1, "已读");
+
+        private final Integer code;
+        private final String desc;
+    }
+
+    @Getter
+    @AllArgsConstructor
+    public enum BusinessType {
+        ORDER(1, "订单"),
+        REFUND(2, "退款");
+
+        private final Integer code;
+        private final String desc;
     }
 }

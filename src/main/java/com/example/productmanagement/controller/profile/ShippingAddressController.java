@@ -97,10 +97,10 @@ public class ShippingAddressController {
      * 获取当前用户的收货地址列表
      */
     @GetMapping("/list2")
-    public com.example.productmanagement.controller.Result<List<ShippingAddress>> listAddresses(@RequestParam Long userId) {
-        Long userId1 = UserHolder.getUserId();
-        userId=userId1;
+    public com.example.productmanagement.controller.Result<List<ShippingAddress>> listAddresses() {
+        Long userId = UserHolder.getUserId();
         List<ShippingAddress> list = shippingAddressMapper.getAddressListByUserId(userId);
         return com.example.productmanagement.controller.Result.success(list);
     }
 }
+

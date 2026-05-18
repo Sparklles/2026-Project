@@ -35,9 +35,11 @@ public class FrontBookController {
     public Result<IPage<SearchBookVO>> searchBooks(
             @RequestParam(defaultValue = "1") Integer current,
             @RequestParam(defaultValue = "10") Integer size,
-            @RequestParam(required = false) String keyword) {
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String sortField,
+            @RequestParam(required = false) String sortOrder) {
         Page<SearchBookVO> page = new Page<>(current, size);
-        IPage<SearchBookVO> result = frontBookService.searchBooks(page, keyword);
+        IPage<SearchBookVO> result = frontBookService.searchBooks(page, keyword, sortField, sortOrder);
         return Result.success(result);
     }
 

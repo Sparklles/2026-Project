@@ -6,6 +6,7 @@ import com.example.productmanagement.entity.UserFavorite;
 import com.example.productmanagement.mapper.BookInfoMapper;
 import com.example.productmanagement.mapper.UserFavoriteMapper;
 import com.example.productmanagement.service.FrontFavoriteService;
+import com.example.productmanagement.service.UserBehaviorLogService;
 import com.example.productmanagement.vo.FavoriteVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -21,6 +22,7 @@ public class FrontFavoriteServiceImpl implements FrontFavoriteService {
 
     private final UserFavoriteMapper userFavoriteMapper;
     private final BookInfoMapper bookInfoMapper;
+    private final UserBehaviorLogService userBehaviorLogService;
 
     @Override
     public List<FavoriteVO> getUserFavorites(Long userId) {
@@ -94,6 +96,8 @@ public class FrontFavoriteServiceImpl implements FrontFavoriteService {
                 // 🌟 核心：插入收藏记录时，顺便把当下的价格存入库中
                 fav.setFavPrice(book.getPrice());
                 userFavoriteMapper.insert(fav);
+                // 首次收藏成功后记录收藏行为，重复收藏不重复写入。
+                userBehaviorLogService.recordFavorite(userId, bookId);
             }
         }
     }
@@ -107,3 +111,4 @@ public class FrontFavoriteServiceImpl implements FrontFavoriteService {
         return userFavoriteMapper.selectCount(query) > 0;
     }
 }
+

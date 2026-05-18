@@ -6,6 +6,7 @@ import java.math.BigDecimal;
 
 @Data
 public class OrderItemVo {
+    private Long orderItemId;
     private Integer bookId;
     private String bookTitle;
     private String bookAuthor;
@@ -13,4 +14,5 @@ public class OrderItemVo {
     private Integer quantity;
     private BigDecimal price;
     private BigDecimal discount;
+    private BigDecimal payPrice;
 }

@@ -2,6 +2,7 @@ package com.example.productmanagement.controller.profile;
 
 import com.example.productmanagement.dto.UpdateProfileDto;
 import com.example.productmanagement.dto.UpdateUserAccountDto;
+import com.example.productmanagement.dto.UpdateUserStatusDto;
 import com.example.productmanagement.service.ProfileService;
 import com.example.productmanagement.result.Result;
 import com.example.productmanagement.vo.UserProfileVo;
@@ -67,6 +68,20 @@ public class AdminProfileController {
     public Result<Void> updateUserAccount(@PathVariable Long userId,
                                           @RequestBody UpdateUserAccountDto dto) {
         profileService.updateUserAccount(userId, dto);
+        return Result.ok();
+    }
+
+    /**
+     * 管理端：冻结/解冻指定用户账号。
+     * 前端传 status=0 表示禁用，status=1 表示解冻。
+     *
+     * @param userId 目标用户 ID
+     * @param dto    状态参数
+     */
+    @PutMapping("/users/{userId}/status")
+    public Result<Void> updateUserStatus(@PathVariable Long userId,
+                                         @RequestBody UpdateUserStatusDto dto) {
+        profileService.updateUserStatus(userId, dto);
         return Result.ok();
     }
 }

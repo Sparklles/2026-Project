@@ -24,6 +24,8 @@
         <result property="compositeScore" column="composite_score"/>
         <result property="tags" column="tag_names_str"
                 typeHandler="com.example.productmanagement.handler.StringToListTypeHandler"/>
+        <result property="tagIds" column="tag_ids_str"
+                typeHandler="com.example.productmanagement.handler.StringToLongListTypeHandler"/>
         <result property="images" column="image_urls_str"
                 typeHandler="com.example.productmanagement.handler.StringToListTypeHandler"/>
     </resultMap>
@@ -50,11 +52,15 @@
         b.category_id, b.difficulty_tag, b.region,
         c.name AS category_name,
         bs.sales, bs.avg_rating, bs.review_count, bs.favorite_count,bs.composite_score,
-        (SELECT GROUP_CONCAT(t.name SEPARATOR ',')
+        (SELECT GROUP_CONCAT(t.name ORDER BY r.id SEPARATOR ',')
         FROM book_tag_relation r
         INNER JOIN book_tag t ON r.tag_id = t.id
         WHERE r.book_id = b.id
         ) AS tag_names_str,
+        (SELECT GROUP_CONCAT(r.tag_id ORDER BY r.id SEPARATOR ',')
+        FROM book_tag_relation r
+        WHERE r.book_id = b.id
+        ) AS tag_ids_str,
         (SELECT GROUP_CONCAT(img.image_url ORDER BY img.sort_order ASC SEPARATOR ',')
         FROM book_image img
         WHERE img.book_id = b.id
@@ -90,7 +96,16 @@
             b.description, b.cover_image_url, b.stock, b.status,
             b.category_id, b.difficulty_tag, b.region,
             c.name AS category_name,
-            bs.sales, bs.avg_rating, bs.review_count, bs.favorite_count
+            bs.sales, bs.avg_rating, bs.review_count, bs.favorite_count,
+            (SELECT GROUP_CONCAT(t.name ORDER BY r.id SEPARATOR ',')
+             FROM book_tag_relation r
+             INNER JOIN book_tag t ON r.tag_id = t.id
+             WHERE r.book_id = b.id
+            ) AS tag_names_str,
+            (SELECT GROUP_CONCAT(r.tag_id ORDER BY r.id SEPARATOR ',')
+             FROM book_tag_relation r
+             WHERE r.book_id = b.id
+            ) AS tag_ids_str
         FROM book_info b
                  LEFT JOIN book_category c ON b.category_id = c.id
                  LEFT JOIN book_stats bs ON b.id = bs.book_id
@@ -122,7 +137,33 @@
                 OR b.region LIKE CONCAT('%', #{keyword}, '%'))
             </if>
         </where>
-        ORDER BY b.id DESC
+        <choose>
+            <when test="sortField != null and sortField != ''">
+                <choose>
+                    <when test="sortField == 'sales'">
+                        ORDER BY bs.sales ${sortOrder}
+                    </when>
+                    <when test="sortField == 'favorite_count'">
+                        ORDER BY bs.favorite_count ${sortOrder}
+                    </when>
+                    <when test="sortField == 'avg_rating'">
+                        ORDER BY bs.avg_rating ${sortOrder}
+                    </when>
+                    <when test="sortField == 'price'">
+                        ORDER BY b.price ${sortOrder}
+                    </when>
+                    <when test="sortField == 'publish_date'">
+                        ORDER BY b.publish_date ${sortOrder}
+                    </when>
+                    <otherwise>
+                        ORDER BY b.id DESC
+                    </otherwise>
+                </choose>
+            </when>
+            <otherwise>
+                ORDER BY b.id DESC
+            </otherwise>
+        </choose>
     </select>
 
     <!-- 前台高级筛选分页查询（一次性聚合标签） -->

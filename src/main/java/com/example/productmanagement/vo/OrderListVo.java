@@ -30,6 +30,9 @@ public class OrderListVo implements Serializable {
     // 优惠价格
     private BigDecimal discountPrice;
 
+    // 运费
+    private BigDecimal freightPrice;
+
     // 支付价格
     private BigDecimal payPrice;
 

@@ -4,11 +4,18 @@
 
     <select id="selectReviewListForAdmin" resultType="com.example.productmanagement.vo.ReviewDetailVO">
         SELECT
-        r.id, r.rating, r.content, r.status, r.admin_reply, r.create_time,
-        u.username AS reviewerName,
+        r.id,
+        r.rating,
+        r.content,
+        r.status,
+        r.admin_reply AS adminReply,
+        r.create_time AS createTime,
+
+        u.login_account AS reviewerName,
+
         b.title AS bookTitle
         FROM book_review r
-        LEFT JOIN sys_user u ON r.user_id = u.id
+        LEFT JOIN `user` u ON r.user_id = u.id
         LEFT JOIN book_info b ON r.book_id = b.id
         <where>
             <if test="rating != null">

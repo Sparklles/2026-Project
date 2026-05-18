@@ -13,6 +13,7 @@ import org.apache.ibatis.annotations.Update;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 @Mapper
 public interface BookInfoMapper extends BaseMapper<BookInfo> {
@@ -34,7 +35,9 @@ public interface BookInfoMapper extends BaseMapper<BookInfo> {
      */
     IPage<SearchBookVO> searchBooks(IPage<SearchBookVO> page,
                                     @Param("categoryId") Long categoryId,
-                                    @Param("keyword") String keyword);
+                                    @Param("keyword") String keyword,
+                                    @Param("sortField") String sortField,
+                                    @Param("sortOrder") String sortOrder);
 
     /**
      * 前台高级筛选分页查询（仅上架且未删除的书籍）
@@ -200,4 +203,36 @@ public interface BookInfoMapper extends BaseMapper<BookInfo> {
      */
     @Select("UPDATE book_info SET favorite_count = favorite_count - 1 WHERE id = #{bookId} AND favorite_count > 0")
     int decreaseFavoriteCount(@Param("bookId") Long bookId);
+
+    @Select("SELECT COALESCE(c.name, '未分类') AS category, COUNT(*) AS book_count " +
+            "FROM book_info b " +
+            "LEFT JOIN book_category c ON b.category_id = c.id " +
+            "WHERE b.is_deleted = 0 " +
+            "GROUP BY COALESCE(c.name, '未分类') " +
+            "ORDER BY book_count DESC")
+    List<Map<String, Object>> countBooksByCategory();
+
+    @Select("SELECT price_range, COUNT(*) AS book_count " +
+            "FROM ( " +
+            "  SELECT " +
+            "    CASE " +
+            "      WHEN price < 50 THEN '50元以下' " +
+            "      WHEN price BETWEEN 50 AND 100 THEN '50-100元' " +
+            "      WHEN price BETWEEN 101 AND 200 THEN '100-200元' " +
+            "      WHEN price BETWEEN 201 AND 300 THEN '200-300元' " +
+            "      ELSE '300元以上' " +
+            "    END AS price_range, " +
+            "    CASE " +
+            "      WHEN price < 50 THEN 1 " +
+            "      WHEN price BETWEEN 50 AND 100 THEN 2 " +
+            "      WHEN price BETWEEN 101 AND 200 THEN 3 " +
+            "      WHEN price BETWEEN 201 AND 300 THEN 4 " +
+            "      ELSE 5 " +
+            "    END AS sort_order " +
+            "  FROM book_info " +
+            "  WHERE is_deleted = 0 " +
+            ") t " +
+            "GROUP BY price_range, sort_order " +
+            "ORDER BY sort_order")
+    List<Map<String, Object>> countBooksByPriceRange();
 }

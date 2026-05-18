@@ -59,6 +59,12 @@ public class Order implements Serializable {
     private BigDecimal discountAmount;
 
     /**
+     *  运费
+     */
+    private BigDecimal freightAmount;
+
+
+    /**
      * 订单状态：1-待付款，2-待发货，3-待收货，4-已完成，5-已取消，6-售后中，7-待签收，8-已退款
      */
     private Integer orderStatus;
@@ -97,6 +103,26 @@ public class Order implements Serializable {
      * 备注
      */
     private String remark;
+
+    /**
+     *  发货时间
+     */
+    private LocalDateTime deliveryTime;
+
+    /**
+     *  收货时间
+     */
+    private LocalDateTime receiveTime;
+
+    /**
+     *  取消时间
+     */
+    private LocalDateTime cancelTime;
+
+    /**
+     *  订单完成时间
+     */
+    private LocalDateTime closeTime;
 
     /**
      * 删除标记：0-未删除，1-已删除

@@ -7,27 +7,25 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 
 import com.example.productmanagement.common.ErrorCode;
 import com.example.productmanagement.common.StatusEnum;
-import com.example.productmanagement.dto.OrderCreateRequest;
-import com.example.productmanagement.dto.OrderItemDTO;
-import com.example.productmanagement.dto.PayOrderRequest;
-import com.example.productmanagement.dto.UpdateOrderStatus;
+import com.example.productmanagement.dto.*;
 import com.example.productmanagement.entity.*;
 import com.example.productmanagement.exception.BusinessException;
 import com.example.productmanagement.mapper.*;
+import com.example.productmanagement.service.NotificationService;
 import com.example.productmanagement.service.OrderService;
-import com.example.productmanagement.vo.OrderDetailVo;
-import com.example.productmanagement.vo.OrderItemVo;
-import com.example.productmanagement.vo.OrderListVo;
-import com.example.productmanagement.vo.OrderVo;
+import com.example.productmanagement.service.UserBehaviorLogService;
+import com.example.productmanagement.utils.UserHolder;
+import com.example.productmanagement.vo.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.CollectionUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 
@@ -39,14 +37,17 @@ public class OrderServiceImpl implements OrderService {
     private final ShippingAddressMapper addressMapper;
     private final BookInfoMapper bookInfoMapper;
     private final UserMapper userMapper;
+    private final NotificationService notificationService;
+    private final UserBehaviorLogService userBehaviorLogService;
 
-
-    public OrderServiceImpl(OrderMapper orderMapper, OrderItemMapper orderItemMapper, ShippingAddressMapper addressMapper, BookInfoMapper bookInfoMapper, UserMapper userMapper) {
+    public OrderServiceImpl(OrderMapper orderMapper, OrderItemMapper orderItemMapper, ShippingAddressMapper addressMapper, BookInfoMapper bookInfoMapper, UserMapper userMapper, NotificationService notificationService, UserBehaviorLogService userBehaviorLogService) {
         this.orderMapper = orderMapper;
         this.orderItemMapper = orderItemMapper;
         this.addressMapper = addressMapper;
         this.bookInfoMapper = bookInfoMapper;
         this.userMapper = userMapper;
+        this.notificationService = notificationService;
+        this.userBehaviorLogService = userBehaviorLogService;
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -134,6 +135,8 @@ public class OrderServiceImpl implements OrderService {
             orderItem.setPrice(book.getPrice());
             orderItem.setQuantity(item.getQuantity());
             orderItem.setTotalPrice(book.getPrice().multiply(new BigDecimal(item.getQuantity())));
+            orderItem.setDiscountAmount(BigDecimal.ZERO);           // 暂定折扣价为零
+            orderItem.setPayAmount(order.getPayAmount().subtract(orderItem.getDiscountAmount()));
 
             // 使用 MyBatis-Plus 内置的单条插入，完美避开 XML 写错引发的报错！
             orderItemMapper.insert(orderItem);
@@ -191,6 +194,8 @@ public class OrderServiceImpl implements OrderService {
                     ErrorCode.ORDER_NOT_FOUND.getMessage());
         }
 
+        validateCurrentUserOrder(order);
+
         List<OrderItem> items = orderItemMapper.selectList(
                 new LambdaQueryWrapper<OrderItem>()
                         .eq(OrderItem::getOrderId, order.getOrderId()));
@@ -205,6 +210,8 @@ public class OrderServiceImpl implements OrderService {
             throw new BusinessException(ErrorCode.ORDER_NOT_FOUND.getCode(),
                     ErrorCode.ORDER_NOT_FOUND.getMessage());
         }
+
+        validateCurrentUserOrder(order);
 
         List<OrderItem> items = orderItemMapper.selectList(
                 new LambdaQueryWrapper<OrderItem>()
@@ -235,6 +242,12 @@ public class OrderServiceImpl implements OrderService {
                     ErrorCode.ORDER_STATUS_INVALID.getMessage());
         }
 
+        // 校验支付方式
+        if (request.getPayType()<1||request.getPayType()>3){
+            throw new BusinessException(ErrorCode.PAYMENT_METHOD_NOT_SUPPORT.getCode(),
+                    ErrorCode.PAYMENT_METHOD_NOT_SUPPORT.getMessage());
+        }
+
         // 校验书籍状态和库存，并扣减库存
         List<OrderItem> items = orderItemMapper.selectByOrderId(order.getOrderId());
         for (OrderItem item : items) {
@@ -254,45 +267,69 @@ public class OrderServiceImpl implements OrderService {
                         "商品【" + book.getTitle() + "】库存不足");
             }
             bookInfoMapper.decreaseStock(item.getBookId(), item.getQuantity());
+
         }
 
         order.setPayType(request.getPayType());
-        order.setPayStatus(StatusEnum.PayStatus.PAYED.getCode());
+        order.setPayStatus(StatusEnum.PayStatus.PAID.getCode());
         order.setPayTime(LocalDateTime.now());
         order.setOrderStatus(StatusEnum.OrderStatus.PENDING_SHIP.getCode());
         order.setUpdateTime(LocalDateTime.now());
 
         orderMapper.updateById(order);
+
+        // 通知卖家发货
+        notificationService.notifySellerOrderPaid(request.getOrderNo(), request.getUserId());
+
+        // 支付成功后按订单明细逐本书记录购买行为，供推荐模块使用。
+        for (OrderItem item : items) {
+            userBehaviorLogService.recordPurchase(order.getUserId(), item.getBookId());
+        }
+    }
+
+    @Transactional
+    @Override
+    public void userConfirmReceive(OrderOperateDto dto) {
+        UpdateOrderStatus request = new UpdateOrderStatus();
+        request.setUserId(dto.getUserId());
+        request.setOrderNo(dto.getOrderNo());
+        request.setOrderStatus(StatusEnum.OrderStatus.COMPLETED.getCode());
+
+        // 调用核心方法，并通过 Lambda 表达式注入自定义更新逻辑
+        updateOrderStatus(request, order -> {
+            // 在这里直接操作已经通过校验的 Order 对象
+            // 假设你的实体类中完成时间字段名为 completeTime
+            order.setCloseTime(LocalDateTime.now());
+        });
+
+        // 通知卖家订单已完成
+        notificationService.notifySellerOrderCompleted(dto.getOrderNo(), dto.getUserId());
+    }
+
+    @Transactional
+    @Override
+    public void userCancelOrder(OrderOperateDto dto) {
+        UpdateOrderStatus request = new UpdateOrderStatus();
+        request.setUserId(dto.getUserId());
+        request.setOrderNo(dto.getOrderNo());
+        request.setOrderStatus(StatusEnum.OrderStatus.CANCELED.getCode());
+
+        // 调用核心方法，并通过 Lambda 表达式注入自定义更新逻辑
+        updateOrderStatus(request, order -> {
+            // 在这里直接操作已经通过校验的 Order 对象
+            // 假设你的实体类中完成时间字段名为 completeTime
+            order.setCancelTime(LocalDateTime.now());
+            order.setCloseTime(LocalDateTime.now());
+        });
+
+        // 通知卖家订单已取消
+        notificationService.notifySellerOrderCancelled(dto.getOrderNo(), dto.getUserId());
     }
 
     @Transactional
     @Override
     public void updateOrderStatus(UpdateOrderStatus request) {
-        // 获取订单
-        Order order = orderMapper.selectByOrderNo(request.getOrderNo());
-        if (order == null) {
-            throw new BusinessException(ErrorCode.ORDER_NOT_FOUND.getCode(),
-                    ErrorCode.ORDER_NOT_FOUND.getMessage());
-        }
-        
-        // 订单鉴权
-        if (!order.getUserId().equals(request.getUserId())) {
-            throw new BusinessException(ErrorCode.ORDER_NO_PERMISSION.getCode(),
-                    ErrorCode.ORDER_NO_PERMISSION.getMessage());
-        }
-        
-        int newStatus = request.getOrderStatus();
-        int currentStatus = order.getOrderStatus();
-
-        // 订单状态转移不合法
-        if (!isValidStatusTransition(currentStatus, newStatus)) {
-            throw new BusinessException(ErrorCode.ORDER_STATUS_INVALID.getCode(),
-                    ErrorCode.ORDER_STATUS_INVALID.getMessage());
-        }
-
-        order.setOrderStatus(newStatus);
-        order.setUpdateTime(LocalDateTime.now());
-        orderMapper.updateById(order);
+        this.updateOrderStatus(request, null);
     }
 
     @Transactional
@@ -316,6 +353,43 @@ public class OrderServiceImpl implements OrderService {
         }
     }
 
+    @Transactional
+    public void updateOrderStatus(UpdateOrderStatus request, Consumer<Order> customOrderUpdater) {
+        // 1. 获取订单
+        Order order = orderMapper.selectByOrderNo(request.getOrderNo());
+        if (order == null) {
+            throw new BusinessException(ErrorCode.ORDER_NOT_FOUND.getCode(),
+                    ErrorCode.ORDER_NOT_FOUND.getMessage());
+        }
+
+        // 2. 订单鉴权
+        if (!order.getUserId().equals(request.getUserId())) {
+            throw new BusinessException(ErrorCode.ORDER_NO_PERMISSION.getCode(),
+                    ErrorCode.ORDER_NO_PERMISSION.getMessage());
+        }
+
+        int newStatus = request.getOrderStatus();
+        int currentStatus = order.getOrderStatus();
+
+        // 3. 订单状态转移不合法拦截
+        if (!isValidStatusTransition(currentStatus, newStatus)) {
+            throw new BusinessException(ErrorCode.ORDER_STATUS_INVALID.getCode(),
+                    ErrorCode.ORDER_STATUS_INVALID.getMessage());
+        }
+
+        // 4. 设置通用的状态和更新时间
+        order.setOrderStatus(newStatus);
+        order.setUpdateTime(LocalDateTime.now());
+
+        // 5. 【核心优化点】执行调用方传入的自定义额外属性修改逻辑
+        if (customOrderUpdater != null) {
+            customOrderUpdater.accept(order);
+        }
+
+        // 6. 统一执行一次落库
+        orderMapper.updateById(order);
+    }
+
     /**
      * 判断订单状态流转是否合法
      * 1-待支付 → 2-待发货 / 5-已取消
@@ -328,11 +402,19 @@ public class OrderServiceImpl implements OrderService {
         return switch (current) {
             case 1 -> next == 2 || next == 5;
             case 2 -> next == 3 || next == 6;
-            case 3 -> next == 7 || next == 6;
+            case 3 -> next == 7 || next == 6 || next == 4;
             case 7 -> next == 4;
             case 6 -> next == 8;
             default -> false;
         };
+    }
+
+    private void validateCurrentUserOrder(Order order) {
+        Long userId = UserHolder.getUserId();
+        if (!Objects.equals(order.getUserId(), userId)) {
+            throw new BusinessException(ErrorCode.ORDER_NO_PERMISSION.getCode(),
+                    ErrorCode.ORDER_NO_PERMISSION.getMessage());
+        }
     }
 
     private Map<Long, List<OrderItem>> loadOrderItems(List<Order> orders) {
@@ -357,16 +439,18 @@ public class OrderServiceImpl implements OrderService {
         vo.setDiscountPrice(order.getDiscountAmount());
         vo.setPayPrice(order.getPayAmount());
         vo.setCreateTime(order.getCreateTime());
+        vo.setFreightPrice(order.getFreightAmount());
 
         List<OrderItemVo> itemVos = items.stream().map(item -> {
             OrderItemVo iv = new OrderItemVo();
+            iv.setOrderItemId(item.getId());
             iv.setBookId(item.getBookId().intValue());
             iv.setBookTitle(item.getBookTitle());
             iv.setCoverUrl(item.getCoverImageUrl());
             iv.setQuantity(item.getQuantity());
             iv.setPrice(item.getPrice());
 
-            iv.setDiscount(BigDecimal.ZERO);
+            iv.setDiscount(item.getDiscountAmount());
             return iv;
         }).collect(Collectors.toList());
 
@@ -385,6 +469,9 @@ public class OrderServiceImpl implements OrderService {
         vo.setPayPrice(order.getPayAmount());
         vo.setCreateTime(order.getCreateTime());
         vo.setPayTime(order.getPayTime());
+        vo.setShipTime(order.getDeliveryTime());
+        vo.setCloseTime(order.getCloseTime());
+        vo.setFreightPrice(order.getFreightAmount());
         vo.setConsignee(order.getConsignee());
         vo.setPhone(order.getPhone());
         vo.setAddress(order.getAddress());
@@ -394,6 +481,7 @@ public class OrderServiceImpl implements OrderService {
         List<OrderItemVo> itemVos = items.stream().map(item -> {
             OrderItemVo iv = new OrderItemVo();
             iv.setBookId(item.getBookId().intValue());
+            iv.setOrderItemId(item.getId());
             iv.setBookTitle(item.getBookTitle());
             iv.setCoverUrl(item.getCoverImageUrl());
             iv.setQuantity(item.getQuantity());
@@ -427,4 +515,361 @@ public class OrderServiceImpl implements OrderService {
         vo.setUpdateTime(order.getUpdateTime());
         return vo;
     }
+
+    @Override
+    public IPage<OrderListVo> queryOrders(OrderQueryDto query) {
+        validateQueryParams(query);
+
+        Page<OrderListVo> pageParam = new Page<>(query.getCurrent(), query.getSize());
+        IPage<OrderListVo> orderPage = orderMapper.selectOrdersByDynamicQuery(pageParam, query);
+
+        if (orderPage.getTotal() <= 0 || CollectionUtils.isEmpty(orderPage.getRecords())) {
+            Page<OrderListVo> emptyPage = new Page<>(query.getCurrent(), query.getSize());
+            emptyPage.setTotal(0);
+            return emptyPage;
+        }
+
+        List<OrderListVo> orders = orderPage.getRecords();
+        List<Long> orderIds = orders.stream()
+                .map(OrderListVo::getOrderId)
+                .collect(Collectors.toList());
+
+        List<OrderItem> allItems = orderItemMapper.selectList(
+                new LambdaQueryWrapper<OrderItem>().in(OrderItem::getOrderId, orderIds));
+
+        Map<Long, List<OrderItem>> itemMap = allItems.stream()
+                .collect(Collectors.groupingBy(OrderItem::getOrderId));
+
+        orders.forEach(order -> {
+            List<OrderItem> items = itemMap.getOrDefault(order.getOrderId(), List.of());
+            List<OrderItemVo> itemVos = items.stream().map(item -> {
+                OrderItemVo iv = new OrderItemVo();
+                iv.setBookId(item.getBookId().intValue());
+                iv.setOrderItemId(item.getId());
+                iv.setBookTitle(item.getBookTitle());
+                iv.setCoverUrl(item.getCoverImageUrl());
+                iv.setQuantity(item.getQuantity());
+                iv.setPrice(item.getPrice());
+                iv.setDiscount(BigDecimal.ZERO);
+                return iv;
+            }).collect(Collectors.toList());
+            order.setItems(itemVos);
+        });
+
+        return orderPage;
+    }
+
+    @Override
+    public List<OrderListVo> queryOrdersNoPage(OrderQueryDto query) {
+        validateQueryParams(query);
+
+        List<OrderListVo> orders = orderMapper.selectOrdersByDynamicQuery(query);
+
+        if (CollectionUtils.isEmpty(orders)) {
+            return List.of();
+        }
+
+        List<Long> orderIds = orders.stream()
+                .map(OrderListVo::getOrderId)
+                .collect(Collectors.toList());
+
+        List<OrderItem> allItems = orderItemMapper.selectList(
+                new LambdaQueryWrapper<OrderItem>().in(OrderItem::getOrderId, orderIds));
+
+        Map<Long, List<OrderItem>> itemMap = allItems.stream()
+                .collect(Collectors.groupingBy(OrderItem::getOrderId));
+
+        orders.forEach(order -> {
+            List<OrderItem> items = itemMap.getOrDefault(order.getOrderId(), List.of());
+            List<OrderItemVo> itemVos = items.stream().map(item -> {
+                OrderItemVo iv = new OrderItemVo();
+                iv.setBookId(item.getBookId().intValue());
+                iv.setOrderItemId(item.getId());
+                iv.setBookTitle(item.getBookTitle());
+                iv.setCoverUrl(item.getCoverImageUrl());
+                iv.setQuantity(item.getQuantity());
+                iv.setPrice(item.getPrice());
+                iv.setDiscount(BigDecimal.ZERO);
+                return iv;
+            }).collect(Collectors.toList());
+            order.setItems(itemVos);
+        });
+
+        return orders;
+    }
+
+    @Override
+    @Transactional
+    public void adminShipOrder(OrderOperateDto dto) {
+        // 鉴权
+        User user = userMapper.selectById(dto.getUserId());
+
+        if (user == null) {
+            throw new BusinessException(ErrorCode.USER_NOT_FOUND.getCode(),
+                    ErrorCode.USER_NOT_FOUND.getMessage());
+        }
+
+        if (user.getRole()!= 2){
+            throw new BusinessException(ErrorCode.ORDER_NO_PERMISSION.getCode(),
+                    ErrorCode.ORDER_NO_PERMISSION.getMessage());
+        }
+
+        Order order = orderMapper.selectByOrderNo(dto.getOrderNo());
+        if (order == null) {
+            throw new BusinessException(ErrorCode.ORDER_NOT_FOUND.getCode(),
+                    ErrorCode.ORDER_NOT_FOUND.getMessage());
+        }
+
+        if (!Objects.equals(order.getOrderStatus(), StatusEnum.OrderStatus.PENDING_SHIP.getCode())) {
+            throw new BusinessException(ErrorCode.ORDER_STATUS_FLOW_ERROR.getCode(),
+                    "当前订单状态不允许发货，仅待发货状态的订单可以发货");
+        }
+
+        order.setOrderStatus(StatusEnum.OrderStatus.SHIPPED.getCode());
+        order.setUpdateTime(LocalDateTime.now());
+        order.setDeliveryTime(LocalDateTime.now());
+        orderMapper.updateById(order);
+
+        // 发送发货通知给用户
+        LambdaQueryWrapper<OrderItem> itemWrapper = new LambdaQueryWrapper<>();
+        itemWrapper.eq(OrderItem::getOrderId, order.getOrderId());
+        List<OrderItem> items = orderItemMapper.selectList(itemWrapper);
+        List<String> bookNames = items.stream()
+                .map(OrderItem::getBookTitle)
+                .collect(Collectors.toList());
+        notificationService.notifyUserOrderShipped(order.getOrderNo(), order.getUserId(), bookNames);
+    }
+
+    @Override
+    public IPage<AdminOrderListVo> adminListPaidOrders(Long adminId, Integer page, Integer pageSize) {
+        validateAdmin(adminId);
+
+        Page<Order> pageParam = new Page<>(page, pageSize);
+        LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Order::getPayStatus, StatusEnum.PayStatus.PAID.getCode())
+                .orderByDesc(Order::getCreateTime);
+
+        IPage<Order> orderPage = orderMapper.selectPage(pageParam, wrapper);
+
+        return convertToAdminOrderListVoPage(orderPage, page, pageSize);
+    }
+
+    @Override
+    public List<AdminOrderListVo> adminListPaidOrdersAll(Long adminId) {
+        validateAdmin(adminId);
+
+        LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Order::getPayStatus, StatusEnum.PayStatus.PAID.getCode())
+                .orderByDesc(Order::getCreateTime);
+
+        List<Order> orders = orderMapper.selectList(wrapper);
+        return convertToAdminOrderListVoList(orders);
+    }
+
+    @Override
+    public AdminOrderDetailVo adminGetOrderDetail(Long adminId, String orderNo) {
+        validateAdmin(adminId);
+
+        Order order = orderMapper.selectByOrderNo(orderNo);
+        if (order == null) {
+            throw new BusinessException(ErrorCode.ORDER_NOT_FOUND.getCode(),
+                    ErrorCode.ORDER_NOT_FOUND.getMessage());
+        }
+
+        LambdaQueryWrapper<OrderItem> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(OrderItem::getOrderId, order.getOrderId());
+        List<OrderItem> items = orderItemMapper.selectList(wrapper);
+
+        return toAdminOrderDetailVo(order, items);
+    }
+
+    @Override
+    public IPage<AdminOrderListVo> adminListAllOrders(Long adminId, Integer page, Integer pageSize) {
+        validateAdmin(adminId);
+
+        Page<Order> pageParam = new Page<>(page, pageSize);
+        LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
+        wrapper.orderByDesc(Order::getCreateTime);
+
+        IPage<Order> orderPage = orderMapper.selectPage(pageParam, wrapper);
+
+        return convertToAdminOrderListVoPage(orderPage, page, pageSize);
+    }
+
+    @Override
+    public List<AdminOrderListVo> adminListAllOrdersAll(Long adminId) {
+        validateAdmin(adminId);
+
+        LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
+        wrapper.orderByDesc(Order::getCreateTime);
+
+        List<Order> orders = orderMapper.selectList(wrapper);
+        return convertToAdminOrderListVoList(orders);
+    }
+
+    @Override
+    public IPage<AdminOrderListVo> adminListOrdersByStatus(Long adminId, Integer orderStatus, Integer page, Integer pageSize) {
+        validateAdmin(adminId);
+
+        Page<Order> pageParam = new Page<>(page, pageSize);
+        LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Order::getOrderStatus, orderStatus)
+                .orderByDesc(Order::getCreateTime);
+
+        IPage<Order> orderPage = orderMapper.selectPage(pageParam, wrapper);
+
+        return convertToAdminOrderListVoPage(orderPage, page, pageSize);
+    }
+
+    @Override
+    public List<AdminOrderListVo> adminListOrdersByStatusAll(Long adminId, Integer orderStatus) {
+        validateAdmin(adminId);
+
+        LambdaQueryWrapper<Order> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(Order::getOrderStatus, orderStatus)
+                .orderByDesc(Order::getCreateTime);
+
+        List<Order> orders = orderMapper.selectList(wrapper);
+        return convertToAdminOrderListVoList(orders);
+    }
+
+    private void validateAdmin(Long adminId) {
+        User user = userMapper.selectById(adminId);
+        if (user == null) {
+            throw new BusinessException(ErrorCode.USER_NOT_FOUND.getCode(),
+                    ErrorCode.USER_NOT_FOUND.getMessage());
+        }
+        if (user.getRole() != 2) {
+            throw new BusinessException(ErrorCode.ORDER_NO_PERMISSION.getCode(),
+                    "无权限访问，仅管理员可访问");
+        }
+    }
+
+    private IPage<AdminOrderListVo> convertToAdminOrderListVoPage(IPage<Order> orderPage, Integer page, Integer pageSize) {
+        List<Order> orders = orderPage.getRecords();
+        if (orders.isEmpty()) {
+            Page<AdminOrderListVo> emptyPage = new Page<>(page, pageSize);
+            emptyPage.setTotal(0);
+            return emptyPage;
+        }
+
+        List<Long> orderIds = orders.stream()
+                .map(Order::getOrderId)
+                .collect(Collectors.toList());
+
+        List<OrderItem> allItems = orderItemMapper.selectList(
+                new LambdaQueryWrapper<OrderItem>().in(OrderItem::getOrderId, orderIds));
+
+        Map<Long, List<OrderItem>> itemMap = allItems.stream()
+                .collect(Collectors.groupingBy(OrderItem::getOrderId));
+
+        List<AdminOrderListVo> voList = orders.stream()
+                .map(order -> toAdminOrderListVo(order, itemMap.getOrDefault(order.getOrderId(), List.of())))
+                .collect(Collectors.toList());
+
+        Page<AdminOrderListVo> voPage = new Page<>(page, pageSize);
+        voPage.setTotal(orderPage.getTotal());
+        voPage.setRecords(voList);
+
+        return voPage;
+    }
+
+    private List<AdminOrderListVo> convertToAdminOrderListVoList(List<Order> orders) {
+        if (orders.isEmpty()) {
+            return List.of();
+        }
+
+        List<Long> orderIds = orders.stream()
+                .map(Order::getOrderId)
+                .collect(Collectors.toList());
+
+        List<OrderItem> allItems = orderItemMapper.selectList(
+                new LambdaQueryWrapper<OrderItem>().in(OrderItem::getOrderId, orderIds));
+
+        Map<Long, List<OrderItem>> itemMap = allItems.stream()
+                .collect(Collectors.groupingBy(OrderItem::getOrderId));
+
+        return orders.stream()
+                .map(order -> toAdminOrderListVo(order, itemMap.getOrDefault(order.getOrderId(), List.of())))
+                .collect(Collectors.toList());
+    }
+
+    private AdminOrderListVo toAdminOrderListVo(Order order, List<OrderItem> items) {
+        AdminOrderListVo vo = new AdminOrderListVo();
+        vo.setOrderId(order.getOrderId());
+        vo.setOrderNo(order.getOrderNo());
+        vo.setOrderStatus(order.getOrderStatus());
+        vo.setPayStatus(order.getPayStatus());
+        vo.setTotalPrice(order.getTotalAmount());
+        vo.setDiscountPrice(order.getDiscountAmount());
+        vo.setPayPrice(order.getPayAmount());
+        vo.setCreateTime(order.getCreateTime());
+        vo.setUserId(order.getUserId());
+        vo.setUsername(order.getUsername());
+        vo.setConsignee(order.getConsignee());
+        vo.setPhone(order.getPhone());
+
+        List<OrderItemVo> itemVos = items.stream().map(item -> {
+            OrderItemVo iv = new OrderItemVo();
+            iv.setBookId(item.getBookId().intValue());
+            iv.setOrderItemId(item.getId());
+            iv.setBookTitle(item.getBookTitle());
+            iv.setCoverUrl(item.getCoverImageUrl());
+            iv.setQuantity(item.getQuantity());
+            iv.setPrice(item.getPrice());
+            iv.setDiscount(BigDecimal.ZERO);
+            return iv;
+        }).collect(Collectors.toList());
+
+        vo.setItems(itemVos);
+        return vo;
+    }
+
+    private AdminOrderDetailVo toAdminOrderDetailVo(Order order, List<OrderItem> items) {
+        AdminOrderDetailVo vo = new AdminOrderDetailVo();
+        vo.setOrderId(order.getOrderId());
+        vo.setOrderNo(order.getOrderNo());
+        vo.setOrderStatus(order.getOrderStatus());
+        vo.setPayStatus(order.getPayStatus());
+        vo.setTotalPrice(order.getTotalAmount());
+        vo.setDiscountPrice(order.getDiscountAmount());
+        vo.setPayPrice(order.getPayAmount());
+        vo.setCreateTime(order.getCreateTime());
+        vo.setPayTime(order.getPayTime());
+        vo.setShipTime(order.getDeliveryTime());
+        vo.setConsignee(order.getConsignee());
+        vo.setPhone(order.getPhone());
+        vo.setAddress(order.getAddress());
+        vo.setRemark(order.getRemark());
+        vo.setPayType(order.getPayType());
+        vo.setUserId(order.getUserId());
+        vo.setUsername(order.getUsername());
+
+        List<OrderItemVo> itemVos = items.stream().map(item -> {
+            OrderItemVo iv = new OrderItemVo();
+            iv.setOrderItemId(item.getId());
+            iv.setBookId(item.getBookId().intValue());
+            iv.setBookTitle(item.getBookTitle());
+            iv.setCoverUrl(item.getCoverImageUrl());
+            iv.setQuantity(item.getQuantity());
+            iv.setPrice(item.getPrice());
+            iv.setDiscount(BigDecimal.ZERO);
+            return iv;
+        }).collect(Collectors.toList());
+
+        vo.setItems(itemVos);
+        return vo;
+    }
+
+    private void validateQueryParams(OrderQueryDto query) {
+        if (query.getBeginTime() != null && query.getEndTime() != null) {
+            if (query.getBeginTime().isAfter(query.getEndTime())) {
+                throw new BusinessException(ErrorCode.PARAM_ERROR.getCode(), "开始时间不能晚于结束时间");
+            }
+        }
+        if (query.getOrderStatus() != null && (query.getOrderStatus() < 1 || query.getOrderStatus() > 8)) {
+            throw new BusinessException(ErrorCode.PARAM_ERROR.getCode(), "订单状态不合法");
+        }
+    }
 }
+

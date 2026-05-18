@@ -9,14 +9,18 @@ import com.example.productmanagement.enums.BookSortField;
 import com.example.productmanagement.enums.SortOrder;
 import com.example.productmanagement.mapper.*;
 import com.example.productmanagement.service.FrontBookService;
+import com.example.productmanagement.service.UserBehaviorLogService;
+import com.example.productmanagement.utils.UserHolder;
 import com.example.productmanagement.vo.ProductDetailVO;
 import com.example.productmanagement.vo.ReviewVO;
 import com.example.productmanagement.vo.SearchBookVO;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.text.SimpleDateFormat;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
@@ -24,6 +28,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class FrontBookServiceImpl extends ServiceImpl<BookInfoMapper, BookInfo> implements FrontBookService {
 
     @Autowired
@@ -41,10 +46,20 @@ public class FrontBookServiceImpl extends ServiceImpl<BookInfoMapper, BookInfo> 
     private BookImageMapper bookImageMapper;
     @Autowired
     private BookInfoMapper bookInfoMapper;
+    @Autowired
+    private SearchLogMapper searchLogMapper;
+    @Autowired
+    private UserBehaviorLogService userBehaviorLogService;
 
     @Override
-    public IPage<SearchBookVO> searchBooks(IPage<SearchBookVO> page, String keyword) {
-        return baseMapper.searchBooks(page, null, keyword);
+    public IPage<SearchBookVO> searchBooks(IPage<SearchBookVO> page, String keyword, String sortField, String sortOrder) {
+        BookSortField bookSortField = BookSortField.fromField(sortField);
+        SortOrder order = SortOrder.fromValue(sortOrder);
+        String safeSortField = bookSortField == null ? null : bookSortField.getColumn();
+        String safeSortOrder = order == null ? SortOrder.DESC.getValue() : order.getValue();
+        IPage<SearchBookVO> result = baseMapper.searchBooks(page, null, keyword, safeSortField, safeSortOrder);
+        recordSearchLog(page, keyword, result.getTotal());
+        return result;
     }
 
     @Override
@@ -80,6 +95,7 @@ public class FrontBookServiceImpl extends ServiceImpl<BookInfoMapper, BookInfo> 
         if (bookInfo == null || bookInfo.getStatus() == 0) {
             throw new RuntimeException("商品不存在或已下架");
         }
+        recordBrowseBehavior(productId);
 
         ProductDetailVO detailVO = new ProductDetailVO();
         detailVO.setId(bookInfo.getId());
@@ -153,4 +169,44 @@ public class FrontBookServiceImpl extends ServiceImpl<BookInfoMapper, BookInfo> 
         if (date == null) return "";
         return new SimpleDateFormat("yyyy-MM-dd").format(date);
     }
+
+    private void recordSearchLog(IPage<SearchBookVO> page, String keyword, long resultCount) {
+        if (keyword == null || keyword.trim().isEmpty()) {
+            return;
+        }
+        if (page != null && page.getCurrent() > 1) {
+            return;
+        }
+
+        try {
+            Long userId = UserHolder.getUserId();
+            User user = userId == null ? null : userMapper.selectById(userId);
+
+            SearchLog searchLog = new SearchLog();
+            searchLog.setUserId(userId);
+            searchLog.setUsername(user == null ? null : user.getLoginAccount());
+            searchLog.setSearchKeyword(keyword.trim());
+            searchLog.setSearchType(1);
+            searchLog.setResultCount(resultCount > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) resultCount);
+            searchLog.setCreateTime(LocalDateTime.now());
+            searchLog.setDeleted(0);
+
+            searchLogMapper.insert(searchLog);
+            // search_log 用于报表统计，user_behavior_log 用于推荐算法分析搜索偏好。
+            userBehaviorLogService.recordSearch(userId, keyword);
+        } catch (Exception e) {
+            log.warn("Failed to record search log, keyword={}", keyword, e);
+        }
+    }
+
+    private void recordBrowseBehavior(Long productId) {
+        try {
+            // 用户打开书籍详情页时记录浏览行为，用于后续个性化推荐。
+            userBehaviorLogService.recordBrowse(UserHolder.getUserId(), productId);
+        } catch (Exception e) {
+            log.warn("Failed to record browse behavior, productId={}", productId, e);
+        }
+    }
 }
+
+

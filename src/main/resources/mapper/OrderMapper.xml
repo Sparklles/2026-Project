@@ -10,6 +10,7 @@
         <result column="total_amount" property="totalAmount"/>
         <result column="pay_amount" property="payAmount"/>
         <result column="discount_amount" property="discountAmount"/>
+        <result column="freight_amount" property="freightAmount"/>
         <result column="order_status" property="orderStatus"/>
         <result column="pay_status" property="payStatus"/>
         <result column="pay_type" property="payType"/>
@@ -18,9 +19,25 @@
         <result column="phone" property="phone"/>
         <result column="address" property="address"/>
         <result column="remark" property="remark"/>
+        <result column="delivery_time" property="deliveryTime"/>
+        <result column="receive_time" property="receiveTime"/>
+        <result column="cancel_time" property="cancelTime"/>
+        <result column="close_time" property="closeTime"/>
         <result column="deleted" property="deleted"/>
         <result column="create_time" property="createTime"/>
         <result column="update_time" property="updateTime"/>
+    </resultMap>
+
+    <resultMap id="OrderListVoResultMap" type="com.example.productmanagement.vo.OrderListVo">
+        <id column="order_id" property="orderId"/>
+        <result column="order_no" property="orderNo"/>
+        <result column="order_status" property="orderStatus"/>
+        <result column="pay_status" property="payStatus"/>
+        <result column="total_amount" property="totalPrice"/>
+        <result column="discount_amount" property="discountPrice"/>
+        <result column="freight_amount" property="freightPrice"/>
+        <result column="pay_amount" property="payPrice"/>
+        <result column="create_time" property="createTime"/>
     </resultMap>
 
     <select id="selectOrdersByUserId" resultMap="BaseResultMap">
@@ -38,5 +55,70 @@
         UPDATE `order` SET deleted = 1, update_time = NOW()
         WHERE order_id = #{orderId} AND user_id = #{userId} AND deleted = 0
     </update>
+
+    <!-- 动态条件查询订单（支持时间区间、商品类别、订单状态的组合筛选） -->
+    <select id="selectOrdersByDynamicQuery" resultMap="OrderListVoResultMap">
+        <choose>
+            <!-- 当有商品类别筛选时，需要关联order_item和book_info表 -->
+            <when test="query.categoryId != null">
+                SELECT DISTINCT
+                o.order_id,
+                o.order_no,
+                o.order_status,
+                o.pay_status,
+                o.total_amount,
+                o.pay_amount,
+                o.discount_amount,
+                o.freight_amount,
+                o.create_time
+                FROM `order` o
+                INNER JOIN order_item oi ON o.order_id = oi.order_id
+                INNER JOIN book_info b ON oi.book_id = b.id
+                <where>
+                    o.user_id = #{query.userId}
+                    AND o.deleted = 0
+                    AND b.category_id = #{query.categoryId}
+                    <if test="query.beginTime != null">
+                        AND o.create_time &gt;= #{query.beginTime}
+                    </if>
+                    <if test="query.endTime != null">
+                        AND o.create_time &lt;= #{query.endTime}
+                    </if>
+                    <if test="query.orderStatus != null">
+                        AND o.order_status = #{query.orderStatus}
+                    </if>
+                </where>
+                ORDER BY o.create_time DESC
+            </when>
+            <!-- 当没有商品类别筛选时，直接查询order表 -->
+            <otherwise>
+                SELECT
+                order_id,
+                order_no,
+                order_status,
+                pay_status,
+                total_amount,
+                pay_amount,
+                discount_amount,
+                freight_amount,
+                create_time
+                FROM `order`
+                <where>
+                    user_id = #{query.userId}
+                    AND deleted = 0
+                    <if test="query.beginTime != null">
+                        AND create_time &gt;= #{query.beginTime}
+                    </if>
+                    <if test="query.endTime != null">
+                        AND create_time &lt;= #{query.endTime}
+                    </if>
+                    <if test="query.orderStatus != null">
+                        AND order_status = #{query.orderStatus}
+                    </if>
+                </where>
+                ORDER BY create_time DESC
+            </otherwise>
+        </choose>
+    </select>
 
 </mapper>

@@ -10,7 +10,9 @@ import java.util.Date;
 
 public class JwtUtil {
 
-    private static final long TOKEN_EXPIRATION = 60 * 60 * 1000L; // 1小时
+    private static final long TOKEN_EXPIRATION = 3 * 60 * 60 * 1000L; // 3小时
+
+    private static final long RENEW_THRESHOLD = 30 * 60 * 1000L; // 剩余30分钟内自动续签
 
     private static final SecretKey SECRET_KEY =
             Keys.hmacShaKeyFor("gBHACI6DFjU1dy0YDkEBq1POu38Vvo34".getBytes());
@@ -30,6 +32,23 @@ public class JwtUtil {
                 .claim("role", role)
                 .signWith(SECRET_KEY, SignatureAlgorithm.HS256)
                 .compact();
+    }
+
+    /**
+     * 判断 token 是否已进入续签窗口。
+     */
+    public static boolean shouldRenew(Claims claims) {
+        Date expiration = claims == null ? null : claims.getExpiration();
+        return expiration != null && expiration.getTime() - System.currentTimeMillis() <= RENEW_THRESHOLD;
+    }
+
+    /**
+     * 基于已认证的载荷重新签发 token。
+     */
+    public static String renewToken(Claims claims) {
+        Object userIdObj = claims.get("userId");
+        Integer role = claims.get("role", Integer.class);
+        return createJwt(Long.valueOf(userIdObj.toString()), role);
     }
 
     /**

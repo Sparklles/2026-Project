@@ -32,5 +32,7 @@ public class OrderItem implements Serializable {
     private BigDecimal price;
     private Integer quantity;
     private BigDecimal totalPrice;
+    private BigDecimal discountAmount;
+    private BigDecimal payAmount;
     private Date createTime;
 }

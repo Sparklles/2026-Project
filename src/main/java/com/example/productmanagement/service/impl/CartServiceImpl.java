@@ -1,6 +1,8 @@
 package com.example.productmanagement.service.impl;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.productmanagement.common.ErrorCode;
 import com.example.productmanagement.dto.CartAddRequest;
@@ -12,6 +14,7 @@ import com.example.productmanagement.exception.BusinessException;
 import com.example.productmanagement.mapper.BookInfoMapper;
 import com.example.productmanagement.mapper.CartMapper;
 import com.example.productmanagement.service.CartService;
+import com.example.productmanagement.service.UserBehaviorLogService;
 import com.example.productmanagement.vo.CartVO;
 import lombok.extern.slf4j.Slf4j;
 
@@ -38,10 +41,12 @@ public class CartServiceImpl implements CartService {
 
     private final CartMapper cartMapper;
     private final BookInfoMapper bookInfoMapper;
+    private final UserBehaviorLogService userBehaviorLogService;
 
-    public CartServiceImpl(CartMapper cartMapper, BookInfoMapper bookInfoMapper) {
+    public CartServiceImpl(CartMapper cartMapper, BookInfoMapper bookInfoMapper, UserBehaviorLogService userBehaviorLogService) {
         this.cartMapper = cartMapper;
         this.bookInfoMapper = bookInfoMapper;
+        this.userBehaviorLogService = userBehaviorLogService;
     }
 
 
@@ -86,6 +91,9 @@ public class CartServiceImpl implements CartService {
             cartMapper.insert(cart);
             log.info("新增购物车记录，userId={}, bookId={}, quantity={}", userId, bookId, quantity);
         }
+
+        // 购物车新增或数量累加成功后记录加购行为，供推荐模块使用。
+        userBehaviorLogService.recordAddCart(userId, bookId);
     }
 
     @Override
@@ -160,7 +168,12 @@ public class CartServiceImpl implements CartService {
                 .distinct()
                 .collect(Collectors.toList());
 
-        List<BookInfo> bookInfoList = bookInfoMapper.selectBatchIds(bookIds);
+        // 批量查询书籍信息
+        LambdaQueryWrapper<BookInfo> wrapper = Wrappers.lambdaQuery();
+        wrapper.in(BookInfo::getId, bookIds)
+                .eq(BookInfo::getIsDeleted, 0);
+
+        List<BookInfo> bookInfoList = bookInfoMapper.selectList(wrapper);
 
         Map<Long, BookInfo> bookInfoMap = bookInfoList.stream()
                 .collect(Collectors.toMap(BookInfo::getId, book -> book));
@@ -194,7 +207,11 @@ public class CartServiceImpl implements CartService {
                 .collect(Collectors.toList());
 
         // 批量查询书籍信息
-        List<BookInfo> bookInfoList = bookInfoMapper.selectBatchByIds(bookIds);
+        LambdaQueryWrapper<BookInfo> wrapper = Wrappers.lambdaQuery();
+        wrapper.in(BookInfo::getId, bookIds)
+                .eq(BookInfo::getIsDeleted, 0);
+
+        List<BookInfo> bookInfoList = bookInfoMapper.selectList(wrapper);
         Map<Long, BookInfo> bookInfoMap = bookInfoList.stream()
                 .collect(Collectors.toMap(BookInfo::getId, book -> book));
 
@@ -231,7 +248,12 @@ public class CartServiceImpl implements CartService {
                 .collect(Collectors.toList());
 
         // 批量查询书籍信息
-        List<BookInfo> bookInfoList = bookInfoMapper.selectBatchByIds(bookIds);
+        LambdaQueryWrapper<BookInfo> wrapper = Wrappers.lambdaQuery();
+        wrapper.in(BookInfo::getId, bookIds)
+                .eq(BookInfo::getIsDeleted, 0);
+
+        List<BookInfo> bookInfoList = bookInfoMapper.selectList(wrapper);
+
         Map<Long, BookInfo> bookInfoMap = bookInfoList.stream()
                 .collect(Collectors.toMap(BookInfo::getId, book -> book));
 
